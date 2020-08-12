@@ -8,6 +8,7 @@ groups:
   ops: Basic calculations
   bool: Logic operations
   str: Working with strings
+  loops: "Loops"
 
 types:
   # Any type is considered as super type
@@ -26,17 +27,17 @@ components:
       I: Any
 
   Repeat:
-    color: @core
+    color: "@core"
     group: core
     title: =>>=
     typeParams: [T]
     in:
-      I: @T
+      I: "@T"
     out:
-      O: @T
+      O: "@T"
 
   Number:
-    color: @core
+    color: "@core"
     group: core
     attrs:
       V:
@@ -47,7 +48,7 @@ components:
       O: Numeric
 
   String:
-    color: @core
+    color: "@core"
     group: core
     attrs:
       V:
@@ -58,7 +59,7 @@ components:
       O: String
 
   ToString:
-    color: @core
+    color: "@core"
     group: str
     title: Cast to string
     in:
@@ -67,7 +68,7 @@ components:
       O: String
 
   Concat:
-    color: @core
+    color: "@core"
     group: str
     title: Glue strings
     in:
@@ -80,7 +81,7 @@ components:
 
   Prompt:
     title: Prompt a number
-    color: @core
+    color: "@core"
     group: core
     attrs:
       Name:
@@ -91,7 +92,7 @@ components:
 
   Add:
     group: ops
-    color: @ops
+    color: "@ops"
     title: "+"
     in:
       A: Numeric
@@ -102,7 +103,7 @@ components:
   Sub:
     title: "-"
     group: ops
-    color: @ops
+    color: "@ops"
     in:
       A: Numeric
       B: Numeric
@@ -112,7 +113,7 @@ components:
   Mul:
     title: "*"
     group: ops
-    color: @ops
+    color: "@ops"
     in:
       A: Numeric
       B: Numeric
@@ -122,7 +123,7 @@ components:
   Div:
     title: "/"
     group: ops
-    color: @ops
+    color: "@ops"
     in:
       A: Numeric
       B: Numeric
@@ -132,7 +133,7 @@ components:
   Sqrt:
     title: Корень
     group: ops
-    color: @ops
+    color: "@ops"
     in:
       I: Numeric
     out:
@@ -140,20 +141,20 @@ components:
 
   If:
     title: If Then Else
-    color: @bool
+    color: "@bool"
     group: bool
     typeParams: [T]
     in:
       Condition: Boolean
-      onTrue: @T
-      onFalse: @T
+      onTrue: "@T"
+      onFalse: "@T"
     out:
       O:
         type: "@T"
 
   Gt:
     title: "Greater (>)"
-    color: @bool
+    color: "@bool"
     group: bool
     in:
       A: Numeric
@@ -163,7 +164,7 @@ components:
 
   Eq:
     title: Equals
-    color: @bool
+    color: "@bool"
     group: bool
     in:
       A: Numeric
@@ -173,7 +174,7 @@ components:
 
   Not:
     title: NOT
-    color: @bool
+    color: "@bool"
     group: bool
     in:
       I: Boolean
@@ -182,7 +183,7 @@ components:
 
   And:
     title: AND
-    color: @bool
+    color: "@bool"
     group: bool
     in:
       A: Boolean
@@ -192,7 +193,7 @@ components:
 
   Or:
     title: OR
-    color: @bool
+    color: "@bool"
     group: bool
     in:
       A: Boolean

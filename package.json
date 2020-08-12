@@ -1,0 +1,30 @@
+{
+  "name": "vax",
+  "version": "0.0.2",
+  "description": "Visual Graph Editor",
+  "main": "dist/index.js",
+  "scripts": {
+    "start": "tsc && node dist/index.js",
+    "test": "jest"
+  },
+  "repository": "git@github.com:bdatdo0601/vax.git",
+  "author": "Dat Do <dat.b.do@gmail.com>",
+  "license": "MIT",
+  "private": false,
+  "devDependencies": {
+    "@types/jest": "^26.0.9",
+    "@types/lodash": "^4.14.159",
+    "@types/node": "^14.0.27",
+    "fs": "^0.0.1-security",
+    "jest": "^26.3.0",
+    "ts-jest": "^26.2.0",
+    "tslint": "5.12.1",
+    "typescript": "^3.9.7"
+  },
+  "dependencies": {
+    "js-yaml": "^3.14.0",
+    "lodash": "^4.17.19",
+    "raphael": "^2.3.0",
+    "yaml": "^1.10.0"
+  }
+}
