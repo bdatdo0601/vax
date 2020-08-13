@@ -1,6 +1,64 @@
-import { map, some, union, clone, filter, every, isEqual } from "lodash";
+import {
+  map,
+  some,
+  union,
+  clone,
+  filter,
+  every,
+  isEqual,
+  includes,
+} from "lodash";
 
-type Edge = [string, string, string, string];
+interface INode {
+  id: string;
+  edges: NodesObject;
+  c: string;
+  x?: number;
+  y?: number;
+  out?: string;
+}
+
+type NodesObject = {
+  [inputNodeId: string]: Node;
+};
+
+class Node implements INode {
+  id: string;
+  c: string;
+  edges: NodesObject;
+  x?: number;
+  y?: number;
+  out?: string;
+
+  static getNodesObject(nodes: Node[]): NodesObject {
+    return nodes.reduce<NodesObject>(
+      (acc, currentNode) => ({ ...acc, [currentNode.id]: currentNode }),
+      {}
+    );
+  }
+
+  constructor({ id, edges, x, y, out, c }: INode) {
+    this.id = id;
+    this.edges = edges;
+    this.x = x;
+    this.y = y;
+    this.out = out;
+    this.c = c;
+  }
+
+  get rawNode(): INode {
+    return {
+      id: this.id,
+      edges: this.edges,
+      x: this.x,
+      y: this.y,
+      out: this.out,
+      c: this.c,
+    };
+  }
+}
+
+type RawEdge = [string, string, string, string];
 
 type EdgeObject = {
   in: string;
@@ -12,90 +70,17 @@ type NodeEdgesObject = {
   [inputNodeId: string]: EdgeObject[];
 };
 
-type NodesObject = {
-  [inputNodeId: string]: Node;
-};
+class Edge {
+  inputNodeId: string;
+  inputNode?: Node;
+  inputName: string;
+  outputNodeId: string;
+  outputNode?: Node;
+  outputName: string;
 
-type INode = {
-  id: string;
-  edges: NodesObject;
-  x?: number;
-  y?: number;
-  out?: string;
-};
-
-class Node {
-  id: string;
-  edges: NodesObject;
-  x?: number;
-  y?: number;
-  out?: string;
-
-  constructor({ id, edges, x, y, out }: INode) {
-    this.id = id;
-    this.edges = edges;
-    this.x = x;
-    this.y = y;
-    this.out = out;
-  }
-}
-
-type Comment = {
-  comment: string[];
-};
-
-type RawGraph = {
-  nodes: Node[];
-  edges: Edge[];
-  comments: Comment[];
-};
-
-type Graph = {
-  nodes: Node[];
-  edges: Edge[];
-  comments: Comment[];
-};
-
-type Schema = {};
-
-type vaxOptions = {
-  schema: Schema;
-};
-
-class VAX {
-  private rawOptions: vaxOptions;
-  private graph!: Graph;
-  private nodesObject!: NodesObject;
-  private nodeEdgesObject!: NodeEdgesObject;
-
-  constructor(options: vaxOptions) {
-    this.rawOptions = options;
-    this.loadGraph({ nodes: [], edges: [], comments: [] });
-  }
-
-  /**
-   * Select a set of nodeo
-   * @param filterNodesIds provided ID
-   */
-  getNodesByIds(filterNodesIds: string[]): Node[] {
-    return map(filterNodesIds, (nodeId) => this.nodesObject[nodeId]);
-  }
-
-  /**
-   * Load a raw graph in the instnace
-   * @param graph raw graph provided by user
-   */
-  loadGraph(graph: RawGraph): Graph {
-    if (isEqual(this.graph, graph)) {
-      return this.graph;
-    }
-    this.graph = graph as Graph;
-    this.nodesObject = (this.graph.nodes || []).reduce<NodesObject>(
-      (acc, currentNode) => ({ ...acc, [currentNode.id]: currentNode }),
-      {}
-    );
-    this.nodeEdgesObject = (this.graph.edges || []).reduce<NodeEdgesObject>(
-      (acc, [inputNodeId, inputName, outputNodeId, outputName]) => ({
+  static getNodeEdgesObject(edges: Edge[]): NodeEdgesObject {
+    return edges.reduce<NodeEdgesObject>(
+      (acc, { inputNodeId, inputName, outputNodeId, outputName }) => ({
         ...acc,
         [inputNodeId]: [
           ...(acc[inputNodeId] || []),
@@ -104,26 +89,112 @@ class VAX {
       }),
       {}
     );
-    return this.graph;
   }
 
-  saveGraph(filterNodeIds?: string[]): RawGraph {
-    const nodesToPickle = filterNodeIds
-      ? this.getNodesByIds(filterNodeIds)
-      : this.graph.nodes;
-
-    return { nodes: [], edges: [], comments: [] };
+  constructor(rawEdge: RawEdge, inputNode?: Node, outputNode?: Node) {
+    const [inputNodeId, inputName, outputNodeId, outputName] = rawEdge;
+    this.inputNodeId = inputNodeId;
+    this.outputNodeId = outputNodeId;
+    this.inputName = inputName;
+    this.outputName = outputName;
+    this.inputNode = inputNode;
+    this.outputNode = outputNode;
   }
 
-  findRootNodes(graph: Graph): Node[] {
-    this.loadGraph(graph);
-    return filter(this.graph.nodes, (node) =>
-      every(this.graph.edges, ([inputNodeId]) => inputNodeId !== node.id)
+  toEdgeObject(): EdgeObject {
+    return {
+      in: this.inputName,
+      outputNodeId: this.outputNodeId,
+      out: this.outputName,
+    };
+  }
+
+  get rawEdge(): RawEdge {
+    return [
+      this.inputNodeId,
+      this.inputName,
+      this.outputNodeId,
+      this.outputName,
+    ];
+  }
+}
+
+interface IComment {
+  comment: string[];
+}
+
+class Comment implements IComment {
+  comment: string[];
+
+  constructor({ comment }: IComment) {
+    this.comment = comment;
+  }
+
+  get rawComment(): IComment {
+    return { comment: this.comment };
+  }
+}
+
+type RawGraph = {
+  nodes: INode[];
+  edges: RawEdge[];
+  comments: IComment[];
+};
+
+class Graph {
+  nodes: Node[];
+  edges: Edge[];
+  comments: Comment[];
+  nodesObject: NodesObject;
+  nodeEdgesObject: NodeEdgesObject;
+
+  constructor(rawGraph: RawGraph) {
+    this.nodes = rawGraph.nodes.map((rawNode) => new Node(rawNode));
+    this.edges = rawGraph.edges.map((rawEdge) => new Edge(rawEdge));
+    this.comments = rawGraph.comments.map(
+      (rawComments) => new Comment(rawComments)
+    );
+    this.nodesObject = Node.getNodesObject(this.nodes);
+    this.nodeEdgesObject = Edge.getNodeEdgesObject(this.edges);
+  }
+
+  get rawGraph(): RawGraph {
+    return {
+      nodes: this.nodes.map((n) => n.rawNode),
+      edges: this.edges.map((e) => e.rawEdge),
+      comments: this.comments.map((c) => c.rawComment),
+    };
+  }
+
+  /**
+   * Select a set of node
+   * @param filterNodesIds provided ID
+   */
+  getNodesByIds(filterNodesIds: string[]): Node[] {
+    return map(filterNodesIds, (nodeId) => this.nodesObject[nodeId]);
+  }
+
+  /**
+   * Get all root nodes in graph
+   */
+  getRootNodes(): Node[] {
+    return filter(this.nodes, (node) =>
+      every(this.edges, ({ inputNodeId }) => inputNodeId !== node.id)
     );
   }
 
-  inlineUserFunctionsInGraph(graph: Graph): Graph {
-    return { nodes: [], edges: [], comments: [] };
+  /**
+   * Compare if two graph are identical
+   */
+  equals(graph: Graph) {
+    return isEqual(graph.rawGraph, this.rawGraph);
+  }
+
+  /**
+   * Compare if this graph and raw graph are identical
+   */
+  equalsRaw(rawGraph: RawGraph) {
+    return isEqual(rawGraph, this.rawGraph);
   }
 
   private composeTree(node: Node, rawParentsIds: string[], out?: string): Node {
@@ -161,14 +232,13 @@ class VAX {
     return newNode;
   }
 
-  composeTreeFromGraph(graph: Graph, rootNodeId: string): Node {
-    this.loadGraph(graph);
+  composeTreeWithRootNode(rootNodeId: string): Node {
     return this.composeTree(this.nodesObject[rootNodeId], []);
   }
 
   composeTrees(): Node[] {
-    return map(this.findRootNodes(this.graph), (rootNode) =>
-      this.composeTreeFromGraph(this.graph, rootNode.id)
+    return map(this.getRootNodes(), (rootNode) =>
+      this.composeTreeWithRootNode(rootNode.id)
     );
   }
 
@@ -177,6 +247,74 @@ class VAX {
     return map(this.findRootNodes(inlinedGraph), (rootNode) =>
       this.composeTreeFromGraph(inlinedGraph, rootNode.id)
     );
+  }
+}
+
+type SchemaComponent = {
+  isUserFunction: boolean;
+};
+
+type Schema = {
+  components: {
+    [name: string]: SchemaComponent;
+  };
+};
+
+type vaxOptions = {
+  schema: Schema;
+};
+
+class VAX {
+  private graph!: Graph;
+  private schema: Schema;
+  private userFunctionStorage: Map<string, () => {}>;
+
+  constructor(options: vaxOptions) {
+    const { schema } = options;
+    this.schema = schema;
+    this.userFunctionStorage = new Map<string, () => {}>();
+    this.loadGraph({ nodes: [], edges: [], comments: [] });
+  }
+
+  /**
+   * Load a raw graph in the instnace
+   * @param graph raw graph provided by user
+   */
+  loadGraph(graph: RawGraph): Graph {
+    if (this.graph.equalsRaw(graph)) {
+      return this.graph;
+    }
+    return new Graph(graph);
+  }
+
+  saveGraph(filterNodeIds?: string[]): RawGraph {
+    return this.graph.rawGraph;
+  }
+
+  saveFilteredGraph(filterNodeIds: string[]): RawGraph {
+    // TODO: Implementation
+    return this.graph.rawGraph;
+  }
+
+  inlineUserFunctionsInGraph(rawUserFunctionsIds?: string[]): Graph {
+    const userFunctionsIds = [
+      ...(rawUserFunctionsIds || []),
+      ...(rawUserFunctionsIds
+        ? []
+        : Object.entries(this.schema.components)
+            .filter(([, component]) => component.isUserFunction)
+            .map(([name]) => name)),
+    ];
+    const userFunctionsNodes = this.graph.nodes.filter((n) =>
+      includes(userFunctionsIds, n.c)
+    );
+
+    if (userFunctionsNodes.length <= 0) {
+      return this.graph;
+    }
+
+    // TODO: not implemented
+    return graph || this.graph;
   }
 }
 
