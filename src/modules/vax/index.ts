@@ -9,8 +9,15 @@ import {
   includes,
 } from "lodash";
 
+enum EdgeFilter {
+  INPUT = "input",
+  OUTPUT = "output",
+}
+
 interface INode {
   id: string;
+  a: any;
+  t: any;
   edges: NodesObject;
   c: string;
   x?: number;
@@ -24,7 +31,9 @@ type NodesObject = {
 
 class Node implements INode {
   id: string;
-  c: string;
+  a: any;
+  t: any;
+  c: string; // component
   edges: NodesObject;
   x?: number;
   y?: number;
@@ -37,8 +46,10 @@ class Node implements INode {
     );
   }
 
-  constructor({ id, edges, x, y, out, c }: INode) {
-    this.id = id;
+  constructor({ id, edges, x, y, out, c, a, t }: INode, prefix?: string) {
+    this.id = `${prefix || ""}${id}`;
+    this.a = a;
+    this.t = t;
     this.edges = edges;
     this.x = x;
     this.y = y;
@@ -54,7 +65,13 @@ class Node implements INode {
       y: this.y,
       out: this.out,
       c: this.c,
+      a: this.a,
+      t: this.t,
     };
+  }
+
+  clone(prefix?: string): Node {
+    return new Node(this.rawNode, prefix);
   }
 }
 
@@ -77,6 +94,7 @@ class Edge {
   outputNodeId: string;
   outputNode?: Node;
   outputName: string;
+  actions: string[];
 
   static getNodeEdgesObject(edges: Edge[]): NodeEdgesObject {
     return edges.reduce<NodeEdgesObject>(
@@ -91,14 +109,20 @@ class Edge {
     );
   }
 
-  constructor(rawEdge: RawEdge, inputNode?: Node, outputNode?: Node) {
+  constructor(
+    rawEdge: RawEdge,
+    prefix?: string,
+    inputNode?: Node,
+    outputNode?: Node
+  ) {
     const [inputNodeId, inputName, outputNodeId, outputName] = rawEdge;
     this.inputNodeId = inputNodeId;
     this.outputNodeId = outputNodeId;
-    this.inputName = inputName;
-    this.outputName = outputName;
+    this.inputName = `${prefix || ""}${inputName}`;
+    this.outputName = `${prefix || ""}${outputName}`;
     this.inputNode = inputNode;
     this.outputNode = outputNode;
+    this.actions = [];
   }
 
   toEdgeObject(): EdgeObject {
@@ -116,6 +140,10 @@ class Edge {
       this.outputNodeId,
       this.outputName,
     ];
+  }
+
+  clone(prefix?: string): Edge {
+    return new Edge(this.rawEdge, prefix);
   }
 }
 
@@ -148,9 +176,9 @@ class Graph {
   nodesObject: NodesObject;
   nodeEdgesObject: NodeEdgesObject;
 
-  constructor(rawGraph: RawGraph) {
-    this.nodes = rawGraph.nodes.map((rawNode) => new Node(rawNode));
-    this.edges = rawGraph.edges.map((rawEdge) => new Edge(rawEdge));
+  constructor(rawGraph: RawGraph, prefix?: string) {
+    this.nodes = rawGraph.nodes.map((rawNode) => new Node(rawNode, prefix));
+    this.edges = rawGraph.edges.map((rawEdge) => new Edge(rawEdge, prefix));
     this.comments = rawGraph.comments.map(
       (rawComments) => new Comment(rawComments)
     );
@@ -174,6 +202,19 @@ class Graph {
     return map(filterNodesIds, (nodeId) => this.nodesObject[nodeId]);
   }
 
+  getEdges(node: Node, edgeFilterBy?: EdgeFilter): Edge[] {
+    return this.edges.filter((edge) => {
+      switch (edgeFilterBy) {
+        case EdgeFilter.INPUT:
+          return edge.inputNodeId === node.id;
+        case EdgeFilter.OUTPUT:
+          return edge.outputNodeId === node.id;
+        default:
+          return edge.inputNodeId === node.id || edge.outputNodeId === node.id;
+      }
+    });
+  }
+
   /**
    * Get all root nodes in graph
    */
@@ -181,6 +222,22 @@ class Graph {
     return filter(this.nodes, (node) =>
       every(this.edges, ({ inputNodeId }) => inputNodeId !== node.id)
     );
+  }
+
+  addNodes(nodes: Node[]): void {
+    this.nodes = [...this.nodes, ...nodes];
+  }
+
+  addEdges(edges: Edge[]): void {
+    this.edges = [...this.edges, ...edges];
+  }
+
+  deleteNodes(filterFn: (node: Node, index: number) => boolean): void {
+    this.nodes = this.nodes.filter((node, index) => !filterFn(node, index));
+  }
+
+  deleteEdges(filterFn: (edge: Edge, index: number) => boolean): void {
+    this.edges = this.edges.filter((edge, index) => !filterFn(edge, index));
   }
 
   /**
@@ -242,11 +299,8 @@ class Graph {
     );
   }
 
-  composeTreesInlined(): Node[] {
-    const inlinedGraph = this.inlineUserFunctionsInGraph(this.saveGraph());
-    return map(this.findRootNodes(inlinedGraph), (rootNode) =>
-      this.composeTreeFromGraph(inlinedGraph, rootNode.id)
-    );
+  clone(prefix?: string): Graph {
+    return new Graph(this.rawGraph, prefix);
   }
 }
 
@@ -268,12 +322,18 @@ class VAX {
   private graph!: Graph;
   private schema: Schema;
   private userFunctionStorage: Map<string, () => {}>;
+  private counter: number;
 
   constructor(options: vaxOptions) {
     const { schema } = options;
+    this.counter = 0;
     this.schema = schema;
     this.userFunctionStorage = new Map<string, () => {}>();
     this.loadGraph({ nodes: [], edges: [], comments: [] });
+  }
+
+  generateNextID() {
+    return this.counter++;
   }
 
   /**
@@ -288,6 +348,7 @@ class VAX {
   }
 
   saveGraph(filterNodeIds?: string[]): RawGraph {
+    // TODO: Implementation
     return this.graph.rawGraph;
   }
 
@@ -296,7 +357,74 @@ class VAX {
     return this.graph.rawGraph;
   }
 
-  inlineUserFunctionsInGraph(rawUserFunctionsIds?: string[]): Graph {
+  private evaluateUserFunctionNode(node: Node, graph: Graph): void {
+    const userFunction = this.userFunctionStorage.get(node.c);
+    const prefix = `uf_${this.generateNextID()}_`;
+    const cloneGraphWithPrefix = graph.clone(prefix);
+
+    // update edges
+    const edgeWithNodeAsInput = graph.getEdges(node, EdgeFilter.INPUT);
+
+    edgeWithNodeAsInput.forEach((edge) => {
+      const { inputName } = edge;
+      const userFunctionInputNodeWithPrefix = cloneGraphWithPrefix.nodes.find(
+        (n) => n.c === "UF_Input" && n.a.Name === inputName
+      );
+      if (userFunctionInputNodeWithPrefix) {
+        cloneGraphWithPrefix
+          .getEdges(userFunctionInputNodeWithPrefix, EdgeFilter.INPUT)
+          .forEach((userFunctionEdge) => {
+            edge.inputName = userFunctionEdge.inputName;
+            edge.inputNodeId = userFunctionEdge.inputNodeId;
+            userFunctionEdge.actions.push("toDelete");
+          });
+      }
+    });
+
+    const edgeWithNodeAsOutput = graph.getEdges(node, EdgeFilter.OUTPUT);
+
+    edgeWithNodeAsOutput.forEach((edge) => {
+      const { outputName } = edge;
+      const userFunctionOutputNodeWithPrefix = cloneGraphWithPrefix.nodes.find(
+        (n) => n.c === "UF_Output" && n.a.Name === outputName
+      );
+      if (userFunctionOutputNodeWithPrefix) {
+        cloneGraphWithPrefix
+          .getEdges(userFunctionOutputNodeWithPrefix, EdgeFilter.OUTPUT)
+          .forEach((userFunctionEdge) => {
+            edge.outputName = userFunctionEdge.outputName;
+            edge.outputNodeId = userFunctionEdge.outputNodeId;
+            userFunctionEdge.actions.push("toDelete");
+          });
+      }
+    });
+
+    // delete system nodes
+    const systemNodesIds = cloneGraphWithPrefix.nodes
+      .filter((userFunctionNode) => userFunctionNode.c.substr(0, 3) === "UF_")
+      .map((userFunctionNode) => userFunctionNode.id);
+
+    cloneGraphWithPrefix.deleteNodes(
+      (userFunctionNode) => userFunctionNode.c.substr(0, 3) === "UF_"
+    );
+    cloneGraphWithPrefix.deleteEdges(
+      (userFunctionEdge) =>
+        userFunctionEdge.actions.includes("toDelete") ||
+        includes(systemNodesIds, userFunctionEdge.outputNodeId) ||
+        includes(systemNodesIds, userFunctionEdge.inputNodeId)
+    );
+
+    graph.deleteEdges((edge) => edge.actions.includes("toDelete"));
+    graph.deleteNodes((n) => n.id === node.id);
+
+    graph.addNodes(cloneGraphWithPrefix.nodes);
+    graph.addEdges(cloneGraphWithPrefix.edges);
+  }
+
+  inlineUserFunctionsInGraph(
+    graph: Graph = this.graph,
+    rawUserFunctionsIds?: string[]
+  ): Graph {
     const userFunctionsIds = [
       ...(rawUserFunctionsIds || []),
       ...(rawUserFunctionsIds
@@ -305,16 +433,38 @@ class VAX {
             .filter(([, component]) => component.isUserFunction)
             .map(([name]) => name)),
     ];
-    const userFunctionsNodes = this.graph.nodes.filter((n) =>
+    const userFunctionsNodes = graph.nodes.filter((n) =>
       includes(userFunctionsIds, n.c)
     );
 
+    // if no user functions spotted
     if (userFunctionsNodes.length <= 0) {
       return this.graph;
     }
 
-    // TODO: not implemented
-    return graph || this.graph;
+    userFunctionsNodes.forEach((node) =>
+      this.evaluateUserFunctionNode(node, graph)
+    );
+
+    // check if we've introduced new user functions by inlining
+    const updatedUserFunctionNodes = graph.nodes.filter((n) =>
+      includes(userFunctionsIds, n.c)
+    );
+
+    if (!updatedUserFunctionNodes.length) {
+      // no user functions spotted, we're cool
+      return graph;
+    } else {
+      // repeat until we have no user functions left
+      return this.inlineUserFunctionsInGraph(graph, userFunctionsIds);
+    }
+  }
+
+  composeTreesInlined(): Node[] {
+    const inlinedGraph = this.inlineUserFunctionsInGraph();
+    return map(inlinedGraph.getRootNodes(), (rootNode) =>
+      inlinedGraph.composeTreeWithRootNode(rootNode.id)
+    );
   }
 }
 
